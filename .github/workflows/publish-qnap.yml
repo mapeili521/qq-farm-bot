@@ -24,15 +24,18 @@ jobs:
             --tag "$image:$GITHUB_SHA" --tag "$image:latest" .
       - name: Build NapCat image
         run: |
-          tag=v4.18.42
-          for registry in docker.m.daocloud.io docker.1ms.run docker.xuanyuan.me; do
-            candidate="$registry/mlikiowa/napcat-docker:$tag"
-            if timeout 150s docker pull --platform linux/amd64 "$candidate"; then
-              base_image="$candidate"
-              break
-            fi
-          done
-          : "${base_image:?Unable to pull the pinned NapCat base image}"
+          archive=napcat-docker-v4.18.42-amd64.tar
+          release=https://github.com/XingYunStar/NapCatQQ/releases/download/v4.18.42
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/$archive" "$release/$archive"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/$archive.sha256" "$release/$archive.sha256"
+          (cd "$RUNNER_TEMP" && sha256sum -c "$archive.sha256")
+
+          expected_id=sha256:039f78c89e67e0403d9cf11f7acda1ace7cf9564456c5db65ba67aa1f52fce7e
+          docker load -i "$RUNNER_TEMP/$archive"
+          actual=$(docker image inspect "$expected_id" --format '{{.Id}} {{.Os}}/{{.Architecture}}')
+          test "$actual" = "$expected_id linux/amd64"
+          base_image=qq-farm-napcat-base:v4.18.42
+          docker tag "$expected_id" "$base_image"
           image="ghcr.io/${GITHUB_REPOSITORY,,}-napcat"
           docker build --platform linux/amd64 --file napcat/Dockerfile \
             --build-arg NAPCAT_IMAGE="$base_image" \
