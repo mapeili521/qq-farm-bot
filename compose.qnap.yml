@@ -1,0 +1,69 @@
+services:
+  qq-farm-bot:
+    image: ghcr.io/mapeili521/qq-farm-bot:latest
+    container_name: qq-farm-bot
+    restart: unless-stopped
+    ports:
+    - 3007:3007
+    volumes:
+    - /share/Container/qq-farm-bot/data:/app/core/data
+    - /share/Container/qq-farm-bot/data/napcat/auth:/app/napcat-auth:ro
+    - /share/Container/qq-farm-bot/data/napcat/maintenance:/app/napcat-maintenance
+    environment:
+      TZ: Asia/Shanghai
+      NODE_ENV: production
+      ADMIN_PORT: '3007'
+      FARM_DATA_DIR: /app/core/data
+      CAPTURE_ADVERTISE_IPS: ${CAPTURE_ADVERTISE_IPS:-auto}
+      NAPCAT_LOGIN_ENABLED: 'true'
+      NAPCAT_WEBUI_URL: http://napcat:6099/api
+      NAPCAT_OPENAUTH_URL: http://napcat:6099/plugin/qq-miniapp-openauth/api
+      NAPCAT_MAINTENANCE_DIR: /app/napcat-maintenance
+      FARM_USER_SYSTEM_ENABLED: ${FARM_USER_SYSTEM_ENABLED:-true}
+      FARM_ADMIN_USERNAME: ${FARM_ADMIN_USERNAME:-admin}
+      FARM_ADMIN_PASSWORD: "${FARM_ADMIN_PASSWORD:?\u8BF7\u5148\u5728 .env \u4E2D\u8BBE\
+        \u7F6E FARM_ADMIN_PASSWORD\uFF08\u8BF7\u52FF\u4F7F\u7528\u5F31\u53E3\u4EE4\
+        \uFF09}"
+      FARM_ALLOW_REGISTER: 'false'
+      FARM_ALLOW_PUBLIC_RENEW: 'false'
+      FARM_ALLOW_PUBLIC_RESET_PASSWORD: 'false'
+      FARM_DEFAULT_ACCOUNT_LIMIT: ${FARM_DEFAULT_ACCOUNT_LIMIT:-1}
+    healthcheck:
+      test:
+      - CMD
+      - wget
+      - -q
+      - --spider
+      - http://localhost:3007/api/status
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    depends_on:
+    - napcat
+  napcat:
+    image: ghcr.io/mapeili521/qq-farm-bot-napcat:latest
+    container_name: qq-farm-napcat
+    hostname: ${NAPCAT_DEVICE_NAME:-qq-farm-bot}
+    restart: unless-stopped
+    environment:
+      NAPCAT_UID: ${NAPCAT_UID:-1000}
+      NAPCAT_GID: ${NAPCAT_GID:-1000}
+      NAPCAT_MAINTENANCE_DIR: /app/napcat-maintenance
+    ports:
+    - ${NAPCAT_WEBUI_HOST:-127.0.0.1}:${NAPCAT_WEBUI_PORT:-6099}:6099
+    volumes:
+    - /share/Container/qq-farm-bot/data/napcat/config:/app/napcat/config
+    - /share/Container/qq-farm-bot/data/napcat/QQ:/app/.config/QQ
+    - /share/Container/qq-farm-bot/data/napcat/auth:/app/napcat-auth
+    - /share/Container/qq-farm-bot/data/napcat/maintenance:/app/napcat-maintenance
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
