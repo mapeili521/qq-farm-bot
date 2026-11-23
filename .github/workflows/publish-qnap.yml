@@ -1,4 +1,4 @@
-name: Publish QNAP image
+name: Publish QNAP images
 on:
   push:
     branches: [main]
@@ -22,7 +22,14 @@ jobs:
             --build-arg NPM_REGISTRY=https://registry.npmjs.org \
             --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
             --tag "$image:$GITHUB_SHA" --tag "$image:latest" .
-      - name: Publish image
+      - name: Build NapCat image
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}-napcat"
+          docker build --platform linux/amd64 --file napcat/Dockerfile \
+            --build-arg NAPCAT_IMAGE=mlikiowa/napcat-docker:v4.18.42 \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --tag "$image:$GITHUB_SHA" --tag "$image:latest" .
+      - name: Publish images
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -30,4 +37,6 @@ jobs:
           printf '%s' "$GHCR_TOKEN" |
             docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
           docker push "$image:$GITHUB_SHA"
+          docker push "$image-napcat:$GITHUB_SHA"
           docker push "$image:latest"
+          docker push "$image-napcat:latest"
