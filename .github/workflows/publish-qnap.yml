@@ -30,12 +30,15 @@ jobs:
           curl -fsSL --retry 3 -o "$RUNNER_TEMP/$archive.sha256" "$release/$archive.sha256"
           (cd "$RUNNER_TEMP" && sha256sum -c "$archive.sha256")
 
-          expected_id=sha256:039f78c89e67e0403d9cf11f7acda1ace7cf9564456c5db65ba67aa1f52fce7e
+          config_digest=039f78c89e67e0403d9cf11f7acda1ace7cf9564456c5db65ba67aa1f52fce7e
+          base_image=mlikiowa/napcat-docker:v4.18.42
+          tar -xOf "$RUNNER_TEMP/$archive" manifest.json |
+            jq -e --arg image "$base_image" --arg config "blobs/sha256/$config_digest" \
+              'length == 1 and .[0].RepoTags == [$image] and .[0].Config == $config'
+          tar -xOf "$RUNNER_TEMP/$archive" "blobs/sha256/$config_digest" |
+            sha256sum -c <(printf '%s  -\n' "$config_digest")
           docker load -i "$RUNNER_TEMP/$archive"
-          actual=$(docker image inspect "$expected_id" --format '{{.Id}} {{.Os}}/{{.Architecture}}')
-          test "$actual" = "$expected_id linux/amd64"
-          base_image=qq-farm-napcat-base:v4.18.42
-          docker tag "$expected_id" "$base_image"
+          test "$(docker image inspect "$base_image" --format '{{.Os}}/{{.Architecture}}')" = linux/amd64
           image="ghcr.io/${GITHUB_REPOSITORY,,}-napcat"
           docker build --platform linux/amd64 --file napcat/Dockerfile \
             --build-arg NAPCAT_IMAGE="$base_image" \
