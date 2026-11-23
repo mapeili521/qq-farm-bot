@@ -3,26 +3,79 @@ on:
   push:
     branches: [main]
     paths: ['.github/workflows/publish-qnap.yml']
+  schedule:
+    - cron: '23 19 * * *' # 03:23 Asia/Shanghai
   workflow_dispatch:
-permissions:
-  contents: read
-  packages: write
-concurrency: publish-qnap
+permissions: {}
+concurrency:
+  group: publish-qnap
+  cancel-in-progress: false
 jobs:
+  sync:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      revision: ${{ steps.sync.outputs.revision }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Merge upstream main
+        id: sync
+        run: |
+          git fetch --no-tags https://github.com/BUGDey/qq-farm-bot.git refs/heads/main
+          upstream=$(git rev-parse FETCH_HEAD)
+          if ! git merge-base --is-ancestor "$upstream" HEAD; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git merge --no-edit "$upstream"
+            git push origin HEAD:refs/heads/main
+          fi
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
   publish:
+    needs: sync
+    permissions:
+      contents: read
+      packages: write
+    env:
+      REVISION: ${{ needs.sync.outputs.revision }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ needs.sync.outputs.revision }}
           persist-credentials: false
+      - name: Check published image pair
+        id: check
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          build=false
+          for repository in "$image" "$image-napcat"; do
+            if ! docker manifest inspect "$repository:$REVISION" > "$RUNNER_TEMP/revision.json" ||
+               ! docker manifest inspect "$repository:latest" > "$RUNNER_TEMP/latest.json" ||
+               ! cmp -s "$RUNNER_TEMP/revision.json" "$RUNNER_TEMP/latest.json"; then
+              build=true
+              break
+            fi
+          done
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then build=true; fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
       - name: Build image
+        if: steps.check.outputs.build == 'true'
         run: |
           image="ghcr.io/${GITHUB_REPOSITORY,,}"
           docker build --platform linux/amd64 --file core/Dockerfile \
             --build-arg NPM_REGISTRY=https://registry.npmjs.org \
             --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
-            --tag "$image:$GITHUB_SHA" --tag "$image:latest" .
+            --tag "$image:$REVISION" --tag "$image:latest" .
       - name: Build NapCat image
+        if: steps.check.outputs.build == 'true'
         run: |
           archive=napcat-docker-v4.18.42-amd64.tar
           release=https://github.com/XingYunStar/NapCatQQ/releases/download/v4.18.42
@@ -43,15 +96,16 @@ jobs:
           docker build --platform linux/amd64 --file napcat/Dockerfile \
             --build-arg NAPCAT_IMAGE="$base_image" \
             --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
-            --tag "$image:$GITHUB_SHA" --tag "$image:latest" .
+            --tag "$image:$REVISION" --tag "$image:latest" .
       - name: Publish images
+        if: steps.check.outputs.build == 'true'
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           image="ghcr.io/${GITHUB_REPOSITORY,,}"
           printf '%s' "$GHCR_TOKEN" |
             docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-          docker push "$image:$GITHUB_SHA"
-          docker push "$image-napcat:$GITHUB_SHA"
+          docker push "$image:$REVISION"
+          docker push "$image-napcat:$REVISION"
           docker push "$image:latest"
           docker push "$image-napcat:latest"
