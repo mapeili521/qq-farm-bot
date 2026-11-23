@@ -1,0 +1,33 @@
+name: Publish QNAP image
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-qnap.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write
+concurrency: publish-qnap
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build image
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          docker build --platform linux/amd64 --file core/Dockerfile \
+            --build-arg NPM_REGISTRY=https://registry.npmjs.org \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --tag "$image:$GITHUB_SHA" --tag "$image:latest" .
+      - name: Publish image
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          printf '%s' "$GHCR_TOKEN" |
+            docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker push "$image:$GITHUB_SHA"
+          docker push "$image:latest"
