@@ -24,9 +24,18 @@ jobs:
             --tag "$image:$GITHUB_SHA" --tag "$image:latest" .
       - name: Build NapCat image
         run: |
+          tag=v4.18.42
+          for registry in docker.m.daocloud.io docker.1ms.run docker.xuanyuan.me; do
+            candidate="$registry/mlikiowa/napcat-docker:$tag"
+            if timeout 150s docker pull --platform linux/amd64 "$candidate"; then
+              base_image="$candidate"
+              break
+            fi
+          done
+          : "${base_image:?Unable to pull the pinned NapCat base image}"
           image="ghcr.io/${GITHUB_REPOSITORY,,}-napcat"
           docker build --platform linux/amd64 --file napcat/Dockerfile \
-            --build-arg NAPCAT_IMAGE=mlikiowa/napcat-docker:v4.18.42 \
+            --build-arg NAPCAT_IMAGE="$base_image" \
             --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
             --tag "$image:$GITHUB_SHA" --tag "$image:latest" .
       - name: Publish images
